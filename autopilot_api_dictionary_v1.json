@@ -1,0 +1,343 @@
+{
+  "version": "1.0.0",
+  "generated_at_utc": "2025-10-25T17:27:35Z",
+  "endpoints": {
+    "SignalAPI": {
+      "primary_key": [
+        "timestamp_utc",
+        "asset_id",
+        "timeframe",
+        "horizon_min",
+        "model_id"
+      ],
+      "fields": {
+        "timestamp_utc": {
+          "type": "string",
+          "format": "date-time",
+          "required": true,
+          "desc": "UTC ISO8601"
+        },
+        "asset_id": {
+          "type": "string",
+          "required": true,
+          "desc": "Symbol/Ticker"
+        },
+        "exchange": {
+          "type": "string",
+          "required": false,
+          "desc": "Primary exchange/mic"
+        },
+        "timeframe": {
+          "type": "string",
+          "required": true,
+          "desc": "e.g., 5m/1d"
+        },
+        "horizon_min": {
+          "type": "number",
+          "required": true,
+          "desc": "Forecast horizon in minutes"
+        },
+        "model_id": {
+          "type": "string",
+          "required": true
+        },
+        "model_version": {
+          "type": "string",
+          "required": true
+        },
+        "regime": {
+          "type": "string",
+          "required": false
+        },
+        "signal": {
+          "type": "number",
+          "required": true,
+          "range": [
+            -1,
+            1
+          ]
+        },
+        "prob_up": {
+          "type": "number",
+          "required": false,
+          "range": [
+            0,
+            1
+          ]
+        },
+        "exp_return_bps": {
+          "type": "number",
+          "required": false
+        },
+        "exp_vol_bps": {
+          "type": "number",
+          "required": false
+        },
+        "confidence": {
+          "type": "number",
+          "required": false,
+          "range": [
+            0,
+            1
+          ]
+        },
+        "feature_set_id": {
+          "type": "string",
+          "required": false
+        },
+        "data_freshness_s": {
+          "type": "number",
+          "required": false
+        },
+        "label_def": {
+          "type": "string",
+          "required": false
+        },
+        "latency_ms": {
+          "type": "number",
+          "required": false
+        }
+      }
+    },
+    "RiskAPI": {
+      "primary_key": [
+        "timestamp_utc",
+        "asset_id",
+        "risk_model_id"
+      ],
+      "fields": {
+        "vol_forecast_annual_pct": {
+          "type": "number",
+          "desc": "Annualized vol forecast %"
+        },
+        "var_1d_95_bps": {
+          "type": "number"
+        },
+        "es_1d_97_5_bps": {
+          "type": "number"
+        },
+        "beta_market": {
+          "type": "number"
+        },
+        "corr_bucket": {
+          "type": "string"
+        },
+        "liquidity_score_0_1": {
+          "type": "number"
+        },
+        "adv_20d_shares": {
+          "type": "number"
+        },
+        "spread_bps": {
+          "type": "number"
+        },
+        "max_position_units": {
+          "type": "number"
+        },
+        "max_position_notional_ccy": {
+          "type": "number"
+        },
+        "max_leverage": {
+          "type": "number"
+        },
+        "max_turnover_daily_pct": {
+          "type": "number"
+        },
+        "stop_loss_bps": {
+          "type": "number"
+        },
+        "take_profit_bps": {
+          "type": "number"
+        },
+        "time_stop_min": {
+          "type": "number"
+        },
+        "position_sizing_method": {
+          "type": "string"
+        },
+        "size_target_units": {
+          "type": "number"
+        },
+        "hard_blocks": {
+          "type": "string"
+        }
+      }
+    },
+    "ExecutionAPI": {
+      "fields": {
+        "side": {
+          "type": "string",
+          "enum": [
+            "BUY",
+            "SELL"
+          ]
+        },
+        "order_type": {
+          "type": "string",
+          "enum": [
+            "MKT",
+            "LMT",
+            "STP",
+            "STP_LMT"
+          ]
+        },
+        "limit_price": {
+          "type": "number"
+        },
+        "stop_price": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "tif": {
+          "type": "string",
+          "enum": [
+            "DAY",
+            "IOC",
+            "GTC"
+          ]
+        },
+        "exec_strategy": {
+          "type": "string",
+          "enum": [
+            "VWAP",
+            "TWAP",
+            "POV",
+            "Immediate"
+          ]
+        },
+        "child_slice_size": {
+          "type": "number"
+        },
+        "participation_rate_pct": {
+          "type": "number"
+        },
+        "max_slippage_bps": {
+          "type": "number"
+        },
+        "venue_preference": {
+          "type": "string"
+        },
+        "routing_flags": {
+          "type": "string"
+        },
+        "schedule_end_time_utc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "TradeTicket": {
+      "primary_key": [
+        "ticket_id"
+      ],
+      "fields": {
+        "ticket_id": {
+          "type": "string",
+          "required": true
+        },
+        "parent_signal_id": {
+          "type": "string"
+        },
+        "asset_id": {
+          "type": "string"
+        },
+        "side": {
+          "type": "string"
+        },
+        "target_qty": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "target_weight_pct": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "order_type": {
+          "type": "string"
+        },
+        "limit_price": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "stop_price": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "tif": {
+          "type": "string"
+        },
+        "stop_loss_bps": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "take_profit_bps": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "trailing_stop_bps": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "time_stop_min": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "exec_strategy": {
+          "type": "string"
+        },
+        "max_slippage_bps": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "schedule_end_time_utc": {
+          "type": "string"
+        },
+        "commission_model_id": {
+          "type": "string"
+        },
+        "compliance_flags": {
+          "type": "string"
+        },
+        "guardrail_state": {
+          "type": "string"
+        },
+        "model_id": {
+          "type": "string"
+        },
+        "model_version": {
+          "type": "string"
+        },
+        "comments": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "notes": {
+    "regime": "Output of a separate classifier",
+    "prob_up/confidence": "Calibrated probabilities recommended"
+  }
+}

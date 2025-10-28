@@ -1,0 +1,10 @@
+{
+  "base_dir": "/workspace/data",
+  "paths": {
+    "raw": "/workspace/data/raw",
+    "processed": "/workspace/data/processed",
+    "models": "/workspace/data/models",
+    "logs": "/workspace/data/logs",
+    "checkpoints": "/workspace/data/checkpoints"
+  }
+}

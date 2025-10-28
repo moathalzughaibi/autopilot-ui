@@ -1,0 +1,549 @@
+
+import os, glob, json, re, subprocess, pandas as pd, numpy as np
+import streamlit as st
+import plotly.graph_objects as go
+
+DATA_DIR = "/workspace/data/processed"
+
+@st.cache_data
+def list_symbols():
+    files = glob.glob(os.path.join(DATA_DIR, "*_features.parquet"))
+    return sorted([os.path.basename(p).replace("_features.parquet","") for p in files])
+
+@st.cache_data
+def load_features(sym):
+    p = os.path.join(DATA_DIR, f"{sym}_features.parquet")
+    if not os.path.exists(p): return pd.DataFrame()
+    df = pd.read_parquet(p)
+    if "Date" in df.columns:
+        df["Date"] = pd.to_datetime(df["Date"]); df = df.sort_values("Date").reset_index(drop=True)
+    return df
+
+@st.cache_data
+def load_prices(sym):
+    p = os.path.join(DATA_DIR, f"{sym}_prices.parquet")
+    if not os.path.exists(p): return pd.DataFrame()
+    df = pd.read_parquet(p)
+    if "Date" in df.columns:
+        df["Date"] = pd.to_datetime(df["Date"]); df = df.sort_values("Date").reset_index(drop=True)
+    ren = {c: c.split("_")[0] for c in df.columns if c!="Date" and "_" in c}
+    return df.rename(columns=ren)
+
+@st.cache_data
+
+@st.cache_data
+def load_backtest(sym):
+    pj = os.path.join(DATA_DIR, f"{sym}_bt.json")
+    pp = os.path.join(DATA_DIR, f"{sym}_bt.parquet")
+    metrics = {}
+    df = pd.DataFrame()
+    if os.path.exists(pj):
+        try: metrics = json.load(open(pj))
+        except Exception: metrics = {}
+    if os.path.exists(pp):
+        try:
+            df = pd.read_parquet(pp)
+            if "Date" in df.columns:
+                df["Date"] = pd.to_datetime(df["Date"])
+                df = df.sort_values("Date").reset_index(drop=True)
+        except Exception:
+            df = pd.DataFrame()
+    return df, metrics
+
+
+def load_flow(sym):
+    p = os.path.join(DATA_DIR, f"{sym}_flow.parquet")
+    if os.path.exists(p):
+        df = pd.read_parquet(p)
+        if "Date" in df.columns: df["Date"] = pd.to_datetime(df["Date"])
+        return df.sort_values("Date").reset_index(drop=True)
+    return pd.DataFrame()
+
+@st.cache_data
+def load_mtf(sym):
+    p = os.path.join(DATA_DIR, f"{sym}_mtf.json")
+    if os.path.exists(p):
+        try: return json.load(open(p))
+        except Exception: pass
+    return {"daily":None,"weekly":None,"monthly":None,"composite":None}
+
+# ==== ملخص ذكي لمخرجات update_all.py ====
+def _parse_update_stdout(stdout: str) -> pd.DataFrame:
+    rows = {}
+    for ln in stdout.splitlines():
+        ln = ln.strip()
+        m = re.match(r"prices:\s+([A-Z0-9\.\-]+)\s+\d+\s+→", ln)
+        if m:
+            sym = m.group(1); rows.setdefault(sym, {})["Prices"] = "OK"
+        m = re.match(r"flow:\s+([A-Z0-9\.\-]+)\s+→\s+([A-Z]+)\s+conf\s+([0-9\.]+)", ln)
+        if m:
+            sym, stat, conf = m.group(1), m.group(2), float(m.group(3))
+            r = rows.setdefault(sym, {}); r["Flow"] = stat; r["Flow_Conf"] = round(conf,3)
+        m = re.match(r"mtf\s*:\s*([A-Z0-9\.\-]+)\s+→\s+(\{.*\})", ln)
+        if m:
+            sym = m.group(1)
+            js_raw = m.group(2)
+            try:
+                js = json.loads(js_raw.replace("'", '"'))
+            except Exception:
+                js = {}
+            r = rows.setdefault(sym, {})
+            r["MTF_D"] = js.get("daily"); r["MTF_W"] = js.get("weekly")
+            r["MTF_M"] = js.get("monthly"); r["MTF_Score"] = js.get("composite")
+    if not rows:
+        return pd.DataFrame(columns=["Symbol","Prices","Flow","Flow_Conf","MTF_D","MTF_W","MTF_M","MTF_Score"])
+    df = pd.DataFrame.from_dict(rows, orient="index").reset_index().rename(columns={"index":"Symbol"})
+    # ترتيب أعمدة جميل
+    cols = [c for c in ["Symbol","Prices","Flow","Flow_Conf","MTF_D","MTF_W","MTF_M","MTF_Score"] if c in df.columns]
+    return df[cols].sort_values("Symbol")
+
+# سكرينر
+from autopilot.signals.screeners import build_overview
+
+st.set_page_config(page_title="Autopilot Dashboard", layout="wide")
+st.title("📊 Autopilot — Dashboard")
+
+
+
+import json
+def _load_last_update():
+    pth = os.path.join(DATA_DIR, "_last_update.json")
+    try:
+        return json.load(open(pth,"r",encoding="utf-8")) if os.path.exists(pth) else {}
+    except Exception:
+        return {}
+lu = _load_last_update()
+if lu:
+    st.caption(f"آخر تحديث: {lu.get('ts','—')} | الحالة: {lu.get('status','—')}")
+
+# زر تحديث محسّن
+colA, colB = st.columns([1,3])
+with colA:
+    if st.button("⟲ تحديث البيانات الآن", use_container_width=True):
+        try:
+            with st.status("يتم التحديث…", expanded=False) as status:
+                out = subprocess.run(
+                    ["python","/workspace/data/autopilot/jobs/update_all.py"],
+                    capture_output=True, text=True, timeout=240
+                )
+                df_sum = _parse_update_stdout(out.stdout or "")
+                status.update(label="تم التحديث بنجاح", state="complete", expanded=False)
+            st.toast("تم تحديث البيانات بنجاح ✅", icon="✅")
+            if not df_sum.empty:
+                st.subheader("ملخص آخر تحديث")
+                st.dataframe(df_sum, use_container_width=True, hide_index=True)
+            with st.expander("تفاصيل السجل (للدعم)"):
+                st.code((out.stdout or "(no output)")[-4000:])
+            st.cache_data.clear()
+        except Exception as e:
+            st.error(f"تعذّر التحديث: {e}")
+
+syms = list_symbols()
+if not syms:
+    st.warning("لا توجد ملفات *_features.parquet داخل processed/.")
+    st.stop()
+
+default_idx = syms.index("2010.SR") if "2010.SR" in syms else 0
+sym = st.sidebar.selectbox("الرمز", syms, index=default_idx)
+
+feat  = load_features(sym)
+price = load_prices(sym)
+flow  = load_flow(sym)
+mtf   = load_mtf(sym)
+
+tabs = st.tabs(["🧭 Overview","📈 Detail","💧 Flow","🔁 Backtest"])
+
+# Overview
+with tabs[0]:
+    fmap = {s: load_features(s) for s in syms}
+    ov = build_overview(fmap)
+    show_cols = ["Symbol","Bias","Liquidity","LiqZ","MTF_D","MTF_W","MTF_M","MTF_Score",
+                 "MomScore(0-3)","1M%","Near52W%","Close","Date"]
+    show_cols = [c for c in show_cols if c in ov.columns]
+    st.dataframe(ov[show_cols], use_container_width=True, height=420)
+
+# Detail
+with tabs[1]:
+    if not price.empty:
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=price["Date"], y=price["Close"], name="Close"))
+        if "SMA_20" in feat.columns:
+            fig.add_trace(go.Scatter(x=feat["Date"], y=feat["SMA_20"], name="SMA20"))
+        if "SMA_50" in feat.columns:
+            fig.add_trace(go.Scatter(x=feat["Date"], y=feat["SMA_50"], name="SMA50"))
+        fig.update_layout(title=f"{sym} — Price & SMAs", height=360, margin=dict(l=20,r=20,t=40,b=10))
+        st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(feat.tail(30), use_container_width=True, height=280)
+
+# Flow
+with tabs[2]:
+    if not flow.empty:
+        c1, c2 = st.columns(2)
+        with c1:
+            fig1 = go.Figure()
+            fig1.add_trace(go.Scatter(x=flow["Date"], y=flow["DV_Z"], name="DV_Z"))
+            fig1.update_layout(title="Dollar Volume Z-Score", height=280, margin=dict(l=20,r=20,t=40,b=10))
+            st.plotly_chart(fig1, use_container_width=True)
+        with c2:
+            fig2 = go.Figure()
+            fig2.add_trace(go.Scatter(x=flow["Date"], y=flow["CMF"], name="CMF"))
+            fig2.update_layout(title="Chaikin Money Flow", height=280, margin=dict(l=20,r=20,t=40,b=10))
+            st.plotly_chart(fig2, use_container_width=True)
+        st.markdown(f"**MTF:** D={mtf.get('daily')} • W={mtf.get('weekly')} • M={mtf.get('monthly')} → **Composite**={mtf.get('composite')}")
+    else:
+        st.info("لا توجد بيانات Flow بعد لهذا الرمز.")
+
+
+# Backtest
+with tabs[3]:
+    bt_df, bt = load_backtest(sym)
+    if not bt_df.empty:
+        c1,c2,c3,c4 = st.columns(4)
+        c1.metric("CAGR", f"{bt.get('cagr',0)*100:.2f}%")
+        c2.metric("Sharpe", f"{bt.get('sharpe',0):.2f}")
+        c3.metric("MaxDD", f"{bt.get('maxdd',0)*100:.2f}%")
+        c4.metric("EQ Final", f"{bt.get('eq_final',1.0):.2f}×")
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=bt_df["Date"], y=bt_df["eq_curve"], name="Strategy"))
+        fig.add_trace(go.Scatter(x=bt_df["Date"], y=bt_df["bh_curve"], name="Buy&Hold"))
+        fig.update_layout(title="Backtest — Equity vs Buy&Hold", height=360, margin=dict(l=20,r=20,t=40,b=10))
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(bt_df.tail(30), use_container_width=True, height=260)
+    else:
+        st.info("لا توجد نتائج باك-تست محفوظة بعد لهذا الرمز.")
+
+@st.cache_data
+def load_cases(sym):
+    p = os.path.join(DATA_DIR, f"{sym}_cases.parquet")
+    return pd.read_parquet(p) if os.path.exists(p) else pd.DataFrame()
+
+@st.cache_data
+def load_cases_summary(sym):
+    p = os.path.join(DATA_DIR, f"{sym}_cases_summary.json")
+    import json
+    return json.load(open(p)) if os.path.exists(p) else {}
+
+@st.cache_data
+def load_decision(sym):
+    p = os.path.join(DATA_DIR, f"{sym}_decision.json")
+    import json
+    return json.load(open(p)) if os.path.exists(p) else {}
+
+@st.cache_data
+def load_rules_metrics(sym):
+    p = os.path.join(DATA_DIR, f"{sym}_rules_metrics.json")
+    import json
+    return json.load(open(p)) if os.path.exists(p) else {}
+
+
+st.markdown("---")
+st.subheader("⚙️ Trade Rules — قرار اليوم")
+dec = load_decision(sym)
+if not dec:
+    st.info("لا قرار محفوظ بعد. شغّل تحديث البيانات.")
+else:
+    c1,c2,c3,c4 = st.columns(4)
+    c1.metric("Decision", dec.get("decision","—"))
+    c2.metric("Close", f"{dec.get('close',float('nan')):,.2f}")
+    if dec.get("stop") is not None:
+        c3.metric("Stop", f"{dec['stop']:.2f}")
+    if dec.get("take") is not None:
+        c4.metric("Take", f"{dec['take']:.2f}")
+    st.caption(f"AsOf: {dec.get('asof','')}")
+    with st.expander("الأسباب"):
+        st.write("\\n".join(f"- {r}" for r in dec.get("reason",[])))
+
+    # ملخص باك-تست القواعد
+    rm = load_rules_metrics(sym)
+    if rm:
+        cm1,cm2,cm3 = st.columns(3)
+        cm1.metric("CAGR", f"{rm.get('cagr',0)*100:.2f}%")
+        cm2.metric("Vol", f"{rm.get('vol',0):.3f}")
+        cm3.metric("MaxDD", f"{rm.get('maxdd',0):.3f}")
+
+@st.cache_data
+def load_ledger():
+    p = os.path.join(DATA_DIR, "trades_ledger.parquet")
+    return pd.read_parquet(p) if os.path.exists(p) else pd.DataFrame()
+
+@st.cache_data
+def load_account():
+    import json
+    p = os.path.join(DATA_DIR, "trades_account.json")
+    return json.load(open(p)) if os.path.exists(p) else {}
+
+st.markdown("---")
+st.subheader("💼 Trades — ورشة التداول الورقي")
+
+acc = load_account()
+led = load_ledger()
+
+c1,c2,c3 = st.columns(3)
+c1.metric("Cash", f"{acc.get('cash',0):,.2f}")
+c2.metric("Equity", f"{acc.get('equity',0):,.2f}")
+c3.metric("Open Positions", int(led[led['Status']=='OPEN'].shape[0]) if not led.empty else 0)
+
+colA, colB = st.columns(2)
+if led.empty:
+    st.info("لا يوجد دفتر صفقات بعد. شغّل التحديث العام.")
+else:
+    open_pos = led[led["Status"]=="OPEN"].copy()
+    closed   = led[led["Status"]=="CLOSED"].copy()
+    with colA:
+        st.caption("OPEN Positions")
+        st.dataframe(open_pos.sort_values("Date"))
+    with colB:
+        st.caption("Closed Trades (Last 20)")
+        st.dataframe(closed.sort_values("Date").tail(20))
+    if not closed.empty:
+        total_pnl = float(closed["PnL"].sum())
+        st.metric("Realized PnL", f"{total_pnl:,.2f}")
+
+
+st.markdown("---")
+
+st.markdown("---")
+st.subheader("🚨 Risk & Alerts")
+al = load_alerts(sym)
+cnt = len(al.get("alerts",[]))
+if cnt == 0:
+    st.info("لا توجد تنبيهات حالية.")
+else:
+    st.metric("عدد التنبيهات", cnt)
+    for a in al["alerts"]:
+        line = f"**[{a.get('type','?')}]** — {a.get('msg','')}"
+        if a.get("sev") == "warning":
+            st.warning(line)
+        elif a.get("sev") == "error":
+            st.error(line)
+        else:
+            st.info(line)
+
+st.subheader("💳 Trades — Paper")
+acc_p = os.path.join(DATA_DIR, "trades_account.json")
+led_p = os.path.join(DATA_DIR, "trades_ledger.parquet")
+eq_p  = os.path.join(DATA_DIR, "trades_equity.parquet")
+
+acct = json.load(open(acc_p)) if os.path.exists(acc_p) else {}
+c1,c2,c3 = st.columns(3)
+if acct:
+    c1.metric("Cash",   f"{acct.get('cash',0):,.2f}")
+    c2.metric("Equity", f"{acct.get('equity',0):,.2f}")
+    c3.metric("AsOf",   acct.get('last_date',''))
+
+if os.path.exists(eq_p):
+    eq = pd.read_parquet(eq_p).sort_values("Date")
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=eq["Date"], y=eq["equity"], name="Equity"))
+    fig.add_trace(go.Scatter(x=eq["Date"], y=eq["cash"],   name="Cash"))
+    fig.update_layout(title="Paper Trading — Equity/Cash", height=320, margin=dict(l=10,r=10,t=40,b=10))
+    st.plotly_chart(fig, use_container_width=True)
+
+if os.path.exists(led_p):
+    led = pd.read_parquet(led_p).sort_values("Date")
+    st.dataframe(led.tail(50))
+
+
+@st.cache_data
+def load_alerts(sym):
+    p = os.path.join(DATA_DIR, f"{sym}_alerts.json")
+    import json
+    return json.load(open(p)) if os.path.exists(p) else {"alerts":[]}
+
+@st.cache_data
+def load_fundamentals(sym):
+    p=os.path.join(DATA_DIR, f"{sym}_fundamentals.json")
+    import json; return json.load(open(p)) if os.path.exists(p) else {}
+
+@st.cache_data
+def load_valuation(sym):
+    p=os.path.join(DATA_DIR, f"{sym}_valuation.json")
+    import json; return json.load(open(p)) if os.path.exists(p) else {}
+
+@st.cache_data
+def load_shariah(sym):
+    p=os.path.join(DATA_DIR, f"{sym}_shariah.json")
+    import json; return json.load(open(p)) if os.path.exists(p) else {}
+
+st.markdown("---")
+st.subheader("📈 Fundamentals & Valuation")
+fd = load_fundamentals(sym); vl = load_valuation(sym); sh = load_shariah(sym)
+colA,colB,colC,colD = st.columns(4)
+colA.metric("Sector", fd.get("sector","—"))
+colB.metric("PE (ttm)", f"{fd.get('trailingPE'):.2f}" if isinstance(fd.get('trailingPE'),(int,float)) else "—")
+colC.metric("PB", f"{fd.get('priceToBook'):.2f}" if isinstance(fd.get('priceToBook'),(int,float)) else "—")
+colD.metric("DivYld", f"{fd.get('dividendYield')*100:.2f}%" if isinstance(fd.get('dividendYield'),(int,float)) else "—")
+c1,c2,c3 = st.columns(3)
+c1.metric("Fair Value (comp)", f"{vl.get('fv_comp',float('nan')):,.2f}" if vl else "—")
+if vl and vl.get("upside") is not None:
+    c2.metric("Upside %", f"{vl['upside']*100:.1f}%")
+c3.metric("Close", f"{vl.get('close',float('nan')):,.2f}" if vl else "—")
+tag = sh.get("status","UNKNOWN")
+color = {"IN":"green","OUT":"red","UNKNOWN":"gray"}.get(tag,"gray")
+st.markdown(f"**Shariah:** <span style='color:{color};font-weight:600'>{tag}</span>", unsafe_allow_html=True)
+if st.button("🔄 Refresh fundamentals for this symbol"):
+    import subprocess, sys
+    cmd = [sys.executable,"-c", "from autopilot.fundamentals.fetch import fetch_fundamentals as F;from autopilot.fundamentals.sector import build_sector_snapshot as B;from autopilot.fundamentals.valuation import fair_value as V;from autopilot.compliance.shariah import classify as C;import json,glob;sy='${sym}';F(sy);B([sy]);V(sy,None);C(sy);print('ok')"]
+    try:
+        out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
+        st.toast("تم التحديث.", icon="✅")
+    except Exception as e:
+        st.error(f"فشل التحديث: {e}")
+
+
+@st.cache_data
+def load_news(sym):
+    p = os.path.join(DATA_DIR, f"{sym}_news.json")
+    import json
+    return json.load(open(p)) if os.path.exists(p) else {}
+
+# —— News widget ——
+nw = load_news(sym)
+with st.expander("📰 أخبار حديثة", expanded=False):
+    if not nw or not nw.get("items"):
+        st.caption("لا توجد أخبار محفوظة بعد.")
+    else:
+        for it in nw["items"][:8]:
+            st.markdown(f"- [{it.get('title','(بدون عنوان)')}]({it.get('link','')})")
+
+
+@st.cache_data
+def load_journal(sym):
+    p = os.path.join(DATA_DIR, f"{sym}_journal.json")
+    import json
+    return json.load(open(p)) if os.path.exists(p) else {"symbol": sym, "events": []}
+
+# === 📝 Journal — تدوين أحداث/ملاحظات ===
+from autopilot.journal.logger import add_event as _add_journal
+
+with st.expander("📝 Journal — تدوين أحداث/ملاحظات", expanded=False):
+    c1,c2= st.columns([3,1])
+    with c1:
+        note = st.text_input("ملاحظة", "")
+    with c2:
+        etype = st.selectbox("النوع", ["note","catalyst","mgmt","regulatory","rumor","earnings","other"], index=0)
+    c3,c4= st.columns(2)
+    with c3:
+        tags = st.text_input("وسوم (مفصولة بفواصل)", "")
+    with c4:
+        d = st.date_input("التاريخ", value=None)
+    if st.button("إضافة", type="primary"):
+        try:
+            _add_journal(sym, date=str(d) if d else None, etype=etype, note=note, tags=tags)
+            st.toast("تمت الإضافة ✅", icon="✅")
+            st.cache_data.clear()
+        except Exception as e:
+            st.error(f"تعذّرت الإضافة: {e}")
+
+    j = load_journal(sym)
+    ev = j.get("events", [])
+    if not ev:
+        st.caption("لا توجد ملاحظات محفوظة بعد.")
+    else:
+        df = pd.DataFrame(ev)
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date", ascending=False)
+        st.dataframe(df, use_container_width=True, height=240)
+
+
+# === 📄 Daily Report ===
+rp_html = os.path.join(DATA_DIR, "daily_report.html")
+rp_csv  = os.path.join(DATA_DIR, "daily_report.csv")
+colA,colB = st.columns(2)
+if os.path.exists(rp_html):
+    with open(rp_html,"rb") as f:
+        colA.download_button("⬇️ تحميل التقرير (HTML)", f.read(), file_name="daily_report.html", mime="text/html")
+if os.path.exists(rp_csv):
+    with open(rp_csv,"rb") as f:
+        colB.download_button("⬇️ تحميل الملخص (CSV)", f.read(), file_name="daily_report.csv", mime="text/csv")
+
+
+
+# === ⚙️ Control Panel — إدخال بيانات يدوية (Templates) ===
+with st.expander("⚙️ Control Panel — رفع قوالب بيانات", expanded=False):
+    st.caption("نموذج CSV موحّد: ارفع القالب بعد تعبئته لكل سوق/سهم.")
+    tcol1, tcol2 = st.columns(2)
+    with tcol1:
+        st.markdown("- `profiles.csv` — الملف التعريفي وتاريخ الإدراج")
+        st.markdown("- `financials_quarterly.csv` — القوائم ربع سنوية")
+    with tcol2:
+        st.markdown("- `dividends.csv` — توزيعات الأرباح")
+        st.markdown("- `corporate_actions.csv` — إجراءات رأس المال")
+    st.caption("القوالب موجودة على الخادم في `/workspace/data/templates/`")
+
+    up = st.file_uploader("ارفع ملف CSV (واحد في كل مرة)", type=["csv"])
+    if up is not None:
+        save_to = os.path.join(DATA_DIR, "input", up.name)
+        os.makedirs(os.path.dirname(save_to), exist_ok=True)
+        with open(save_to, "wb") as f: f.write(up.read())
+        try:
+            from autopilot.admin.ingest import ingest_any
+            kind = ingest_any(save_to)
+            st.success(f"تم ingestion بنجاح → {kind}")
+        except Exception as e:
+            st.error(f"تعذّر الإدخال: {e}")
+
+
+
+# === 📘 Dossier — ملف السهم الشامل ===
+with st.expander("📘 Dossier — ملف السهم الشامل", expanded=False):
+    sym_d = st.selectbox("اختر السهم", SYMS, index=0)
+    c1,c2 = st.columns([1,1])
+    # Profile
+    prof_path = os.path.join(DATA_DIR, f"{sym_d}_profile.json")
+    prof = {}
+    if os.path.exists(prof_path):
+        import json; prof = json.load(open(prof_path,"r",encoding="utf-8"))
+    with c1:
+        st.markdown("#### التعريف")
+        if prof:
+            st.json(prof, expanded=False)
+        else:
+            st.caption("لا توجد معلومات تعريفية بعد (ارفع profiles.csv).")
+    # Yearly financials
+    ypq = os.path.join(DATA_DIR, f"{sym_d}_fin_yearly.parquet")
+    with c2:
+        st.markdown("#### ملخص مالي سنوي")
+        if os.path.exists(ypq):
+            import pandas as _pd
+            dfy = _pd.read_parquet(ypq)
+            st.dataframe(dfy.tail(6), use_container_width=True, height=240)
+        else:
+            st.caption("لا توجد ملخصات سنوية بعد (ارفع financials_quarterly.csv).")
+
+    # Dividends & Corp Actions
+    c3,c4 = st.columns(2)
+    with c3:
+        st.markdown("#### آخر التوزيعات")
+        dp = os.path.join(DATA_DIR, f"{sym_d}_dividends.parquet")
+        if os.path.exists(dp):
+            import pandas as _pd
+            dfd = _pd.read_parquet(dp).sort_values(["ex_date","pay_date"]).tail(10)
+            st.dataframe(dfd, use_container_width=True, height=220)
+        else:
+            st.caption("لا توجد توزيعات بعد (ارفع dividends.csv).")
+    with c4:
+        st.markdown("#### إجراءات رأس المال (أحدث 10)")
+        cp = os.path.join(DATA_DIR, f"{sym_d}_corp_actions.parquet")
+        if os.path.exists(cp):
+            import pandas as _pd
+            dfc = _pd.read_parquet(cp).tail(10)
+            st.dataframe(dfc, use_container_width=True, height=220)
+        else:
+            st.caption("لا توجد إجراءات بعد (ارفع corporate_actions.csv).")
+
+
+
+# === 📚 Sessions — تقارير الجلسات ===
+with st.expander("📚 Sessions — تقارير الجلسات", expanded=False):
+    sess_dir = os.path.join(DATA_DIR, "docs", "sessions")
+    if os.path.isdir(sess_dir):
+        files = sorted([f for f in os.listdir(sess_dir) if f.endswith(".md")], reverse=True)
+        if files:
+            pick = st.selectbox("اختر تقرير جلسة", files, index=0)
+            st.markdown(open(os.path.join(sess_dir, pick), "r", encoding="utf-8").read())
+        else:
+            st.caption("لا توجد تقارير حتى الآن.")
+    else:
+        st.caption("المجلد غير موجود بعد: `/workspace/data/docs/sessions/`")
+
