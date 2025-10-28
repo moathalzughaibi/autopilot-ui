@@ -1,0 +1,14 @@
+portfolio:
+  initial_cash: 100000.0     # رأس المال الابتدائي
+  risk_per_trade: 0.01       # 1% من الكاش مخاطرة لكل صفقة
+  max_open_positions: 10     # الحد الأقصى للصفقات المفتوحة
+
+sizing:
+  use_atr: true
+  atr_multiple: 2.5          # مسافة الوقف = ATR * 2.5
+  min_shares: 1
+
+policy:
+  allow_shorts: false        # حاليا Long-only
+  entry_on: "BUY"            # قرار BUY يفتح صفقة
+  exit_on: "SELL"            # قرار SELL يغلق الصفقة

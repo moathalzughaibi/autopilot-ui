@@ -1,0 +1,8 @@
+whitelist: []        # أضف رموزاً مسموحة صراحةً
+blacklist: []        # أضف رموزاً مستبعدة صراحةً
+sector_exclusions:   # قطاعات تُستبعد مبدئياً
+  - Tobacco
+  - Alcohol
+  - Gambling
+  - Weapons
+notes: "قابل للتوسّع لاحقاً بنِسَب الديون/الإيراد غير المباح."

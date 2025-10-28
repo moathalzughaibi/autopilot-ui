@@ -1,0 +1,11 @@
+thresholds:
+  gap_pct: 0.04           # فجوة يومية ≥ 4%
+  atr_spike: 1.8          # ATR اليوم / متوسطه 60ي ≥ 1.8
+  illiq_vol_ratio: 0.30   # حجم اليوم < 30% من SMA20 للحجم
+  near_stop_atr: 0.50     # قرب الوقف أقل من 0.5*ATR
+  z_dollar: 2.0           # Z-score لحجم الدولار ≥ 2
+  earnings_days: 5        # إعلان أرباح خلال ±5 أيام
+  signal_flip: true       # تنبيه لو انعكست الإشارة بين يومين
+
+lookbacks:
+  dd_days: 20             # نافذة دروداون سعري قصير

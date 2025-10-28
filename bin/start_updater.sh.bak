@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+INTERVAL_MIN="${1:-60}"
+LOG="/workspace/data/logs/updater.log"
+PID="/workspace/data/logs/updater.pid"
+LOCK="/workspace/data/logs/updater.lock"
+
+source /workspace/data/.venv/bin/activate
+export PYTHONPATH=/workspace/data:$PYTHONPATH
+mkdir -p /workspace/data/logs
+touch "$LOG"
+
+# إن كان شغّال لا تُشغّل مرّة ثانية
+if [ -f "$PID" ] && ps -p "$(cat "$PID")" >/dev/null 2>&1; then
+  echo "Updater already running with PID $(cat "$PID")"; exit 0
+fi
+
+SLEEP_SEC=$((INTERVAL_MIN*60))
+
+# شغّل كخدمة منفصلة ومرّر المتغيّرات كبيئة
+setsid nohup env LOG="$LOG" LOCK="$LOCK" SLEEP_SEC="$SLEEP_SEC" bash -c '
+  set +u
+  while true; do
+    (
+      flock -n 9 || exit 0
+      printf "[%s] running update_all.py
+" "$(date -u +%FT%TZ)"
+      python /workspace/data/autopilot/jobs/update_all.py >> "$LOG" 2>&1 || true
+      printf "[%s] done
+" "$(date -u +%FT%TZ)"
+    ) 9>"$LOCK"
+    sleep "$SLEEP_SEC"
+  done
+' </dev/null >> "$LOG" 2>&1 &
+
+echo $! > "$PID"
+sleep 1
+echo "✅ updater started (every ${INTERVAL_MIN}m). PID=$(cat "$PID")"
+echo "LOG: $LOG"

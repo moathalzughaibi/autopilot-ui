@@ -1,0 +1,17 @@
+risk:
+  stop_atr: 2.5       # وقف = Close - 2.5*ATR (للشراء)
+  take_atr: 5.0       # هدف = Close + 5*ATR (للشراء)
+  max_holding_days: 60
+
+entry:
+  rsi_min: 50
+  above_sma20: true
+  macd_above_signal: true
+  flow_z_min: 0.20        # threshold على dollar_z من flow
+  event_lookback_days: 20 # وجود حدث UP قريب يزيد الثقة
+  event_allow: ["UP"]     # يمكن ["UP","DOWN"] لو أردت
+
+exit:
+  rsi_below: 45
+  fall_below_sma20: true
+  macd_cross_down: true
