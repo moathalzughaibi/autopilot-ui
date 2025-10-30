@@ -1,5 +1,4 @@
-import os, json, pandas as pd
-from notion_client import Client
+import os, pandas as pd, httpx
 
 ENV="/workspace/secrets/notion.env"
 if os.path.exists(ENV):
@@ -15,7 +14,14 @@ DB_T   = os.environ["DB_TASKS"]
 OUTDIR = "/workspace/data/processed/notion"
 os.makedirs(OUTDIR, exist_ok=True)
 
-cli = Client(auth=TOKEN)
+NOTION_VERSION = os.environ.get("NOTION_VERSION", "2022-06-28")
+BASE = "https://api.notion.com/v1"
+
+headers = {
+    "Authorization": f"Bearer {TOKEN}",
+    "Notion-Version": NOTION_VERSION,
+    "Content-Type": "application/json",
+}
 
 def _cell(p):
     t = p.get("type")
@@ -28,39 +34,36 @@ def _cell(p):
     if t == "date":         return (p.get("date") or {}).get("start") or ""
     return ""
 
-def _db_query(dbid, start_cursor=None):
-    # مسار A: الطريقة الرسمية
-    if hasattr(cli, "databases") and hasattr(cli.databases, "query"):
-        if start_cursor:
-            return cli.databases.query(database_id=dbid, start_cursor=start_cursor)
-        return cli.databases.query(database_id=dbid)
-    # مسار B: Low-level fallback
-    body = {}
-    if start_cursor: body["start_cursor"] = start_cursor
-    # client.request متاح في 2.x — إن لم يكن، حاول _client.request
-    req = getattr(cli, "request", None) or getattr(cli, "_client", None).request
-    return req({"path": f"/v1/databases/{dbid}/query", "method": "post", "body": body})
+def _db_query_all(dbid:str):
+    url = f"{BASE}/databases/{dbid}/query"
+    payload = {}
+    with httpx.Client(timeout=30.0) as c:
+        while True:
+            r = c.post(url, headers=headers, json=payload)
+            r.raise_for_status()
+            data = r.json()
+            yield from data.get("results", [])
+            if not data.get("has_more"):
+                break
+            payload = {"start_cursor": data.get("next_cursor")}
 
-def read_db(dbid:str) -> pd.DataFrame:
-    rows=[]; cur=None
-    while True:
-        rsp = _db_query(dbid, start_cursor=cur)
-        for r in rsp.get("results", []):
-            props = r.get("properties", {})
-            row = {"id": r.get("id")}
-            for k,v in props.items():
-                try: row[k] = _cell(v)
-                except Exception: row[k] = ""
-            rows.append(row)
-        if not rsp.get("has_more"): break
-        cur = rsp.get("next_cursor")
-        if not cur: break
+def read_db_to_df(dbid:str) -> pd.DataFrame:
+    rows=[]
+    for item in _db_query_all(dbid):
+        props = item.get("properties", {})
+        row   = {"id": item.get("id")}
+        for k,v in props.items():
+            try:
+                row[k] = _cell(v)
+            except Exception:
+                row[k] = ""
+        rows.append(row)
     return pd.DataFrame(rows)
 
 def pull():
-    read_db(DB_G).to_csv(f"{OUTDIR}/glossary.csv",  index=False)
-    read_db(DB_V).to_csv(f"{OUTDIR}/variables.csv", index=False)
-    read_db(DB_T).to_csv(f"{OUTDIR}/tasks.csv",     index=False)
+    read_db_to_df(DB_G).to_csv(f"{OUTDIR}/glossary.csv",  index=False)
+    read_db_to_df(DB_V).to_csv(f"{OUTDIR}/variables.csv", index=False)
+    read_db_to_df(DB_T).to_csv(f"{OUTDIR}/tasks.csv",     index=False)
     print("OK: notion → CSVs @", OUTDIR)
 
 if __name__ == "__main__":
