@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd /workspace/data
-# اسحب آخر تغييرات مع حفظ تعديلاتك تلقائياً
-git pull --rebase --autostash --allow-unrelated-histories || true
-# ادفع أي تغييرات محلية (إن وجدت)
+# تأكد أن الفرع متعقّب للـremote
+git branch --set-upstream-to=origin/main main >/dev/null 2>&1 || true
+git pull --rebase --autostash --allow-unrelated-histories origin main || true
 git add -A || true
 if ! git diff --cached --quiet; then
   git commit -m "Runpod auto-sync: $(date -u +%FT%TZ)"

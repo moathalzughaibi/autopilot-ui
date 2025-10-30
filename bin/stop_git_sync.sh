@@ -5,5 +5,5 @@ if [ -f "$PID" ]; then
   rm -f "$PID"
   echo "✅ git-sync stopped"
 else
-  echo "ℹ️ no git-sync running"
+  echo "git-sync not running"
 fi
