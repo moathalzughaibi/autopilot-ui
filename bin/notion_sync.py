@@ -1,52 +1,54 @@
-import os, sys, pandas as pd
+
+import os, pandas as pd
 from notion_client import Client
 
 ENV="/workspace/secrets/notion.env"
 if os.path.exists(ENV):
     for ln in open(ENV, encoding="utf-8"):
-        if "=" in ln:
-            k, v = ln.strip().split("=", 1)
-            os.environ.setdefault(k, v)
+        ln = ln.strip()
+        if ln and "=" in ln and not ln.startswith("#"):
+            k, v = ln.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
 
-TOKEN = os.environ["NOTION_TOKEN"]
-DB_G = os.environ["DB_GLOSSARY"]
-DB_V = os.environ["DB_VARIABLES"]
-DB_T = os.environ["DB_TASKS"]
+TOKEN  = os.environ["NOTION_TOKEN"]
+DB_G   = os.environ["DB_GLOSSARY"]
+DB_V   = os.environ["DB_VARIABLES"]
+DB_T   = os.environ["DB_TASKS"]
+OUTDIR = "/workspace/data/processed/notion"
+os.makedirs(OUTDIR, exist_ok=True)
 
-OUT = "/workspace/data/processed/notion"
-os.makedirs(OUT, exist_ok=True)
 cli = Client(auth=TOKEN)
 
-def read_db(dbid):
+def _cell(p):
+    t = p.get("type")
+    if t == "title":        return "".join(x["plain_text"] for x in p["title"])
+    if t == "rich_text":    return "".join(x["plain_text"] for x in p["rich_text"])
+    if t == "select":       return (p.get("select") or {}).get("name","")
+    if t == "multi_select": return ",".join(x["name"] for x in p.get("multi_select") or [])
+    if t == "number":       return p.get("number")
+    if t == "date":         return (p.get("date") or {}).get("start","")
+    if t == "checkbox":     return bool(p.get("checkbox"))
+    if t == "status":       return (p.get("status") or {}).get("name","")
+    return str(p.get(t))
+
+def read_db(dbid: str) -> pd.DataFrame:
     rows, cur = [], None
     while True:
         rsp = cli.databases.query(database_id=dbid, start_cursor=cur)
         for r in rsp.get("results", []):
-            props = r["properties"]
             row = {"id": r["id"]}
-            for k, p in props.items():
-                t = p.get("type")
-                row[k] = (
-                    "".join(x["plain_text"] for x in p["title"]) if t == "title" else
-                    "".join(x["plain_text"] for x in p["rich_text"]) if t == "rich_text" else
-                    (p["select"]["name"] if p["select"] else "") if t == "select" else
-                    ",".join(x["name"] for x in p["multi_select"]) if t == "multi_select" else
-                    p["number"] if t == "number" else
-                    (p["date"]["start"] if p["date"] else "") if t == "date" else
-                    bool(p["checkbox"]) if t == "checkbox" else
-                    str(p.get(t))
-                )
+            for k, prop in r["properties"].items():
+                row[k] = _cell(prop)
             rows.append(row)
-        if not rsp.get("has_more"):
-            break
+        if not rsp.get("has_more"): break
         cur = rsp.get("next_cursor")
     return pd.DataFrame(rows)
 
 def pull():
-    read_db(DB_G).to_csv(f"{OUT}/glossary.csv", index=False)
-    read_db(DB_V).to_csv(f"{OUT}/variables.csv", index=False)
-    read_db(DB_T).to_csv(f"{OUT}/tasks.csv", index=False)
-    print("✅ Pull done. Files written to:", OUT)
+    read_db(DB_G).to_csv(f"{OUTDIR}/glossary.csv",  index=False)
+    read_db(DB_V).to_csv(f"{OUTDIR}/variables.csv", index=False)
+    read_db(DB_T).to_csv(f"{OUTDIR}/tasks.csv",     index=False)
+    print("✅ Notion pull ->", OUTDIR)
 
 if __name__ == "__main__":
     pull()
