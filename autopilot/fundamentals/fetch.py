@@ -1,4 +1,10 @@
 
+import os
+if os.path.exists("/workspace/data/flags/OFFLINE"):
+    # وضع أوفلاين: لا نجلب من الإنترنت، ارمِ استثناء واضح
+    raise RuntimeError("OFFLINE mode: network fetch disabled")
+
+
 import os, json, pandas as pd, numpy as np, yfinance as yf
 PROC="/workspace/data/processed"
 def fetch_fundamentals(symbol: str) -> dict:
