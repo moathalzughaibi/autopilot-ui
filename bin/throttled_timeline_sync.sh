@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MIN_GAP_MINUTES="${1:-30}"                       # الحد الأدنى بين تشغيل وآخر (بالدقائق)
-STAMP="/workspace/data/logs/.timeline_last_run"  # ملف ختم وقت آخر تشغيل
+MIN_GAP_MINUTES="${1:-30}"
+STAMP="/workspace/data/logs/.timeline_last_run"
 
 now_ts="$(date +%s)"
 last_ts=0
@@ -14,10 +14,8 @@ if [ "$gap" -lt "$MIN_GAP_MINUTES" ]; then
   exit 0
 fi
 
-# نفّذ الدفعة
 source /workspace/data/.venv/bin/activate || true
 /workspace/data/bin/run_timeline_once.sh || true
 
-# حدّث الختم
 date +%s > "$STAMP"
 echo "Timeline sync done."
