@@ -4,14 +4,14 @@ PORT="${1:-8889}"
 LOG="/workspace/data/logs/webhook_pull.log"
 PID="/workspace/data/logs/webhook_pull.pid"
 
-# لو شغال.. أوقفه أولاً
+# أوقف إن كان شغال
 if [ -f "$PID" ] && ps -p "$(cat "$PID")" >/dev/null 2>&1; then
   kill -9 "$(cat "$PID")" 2>/dev/null || true
   rm -f "$PID"
 fi
 
-# شغّل
 : > "$LOG"
+# لا تحط مسافة بعد "\" أبداً
 setsid nohup uvicorn webhook_pull:app \
   --app-dir /workspace/data/bin \
   --host 0.0.0.0 --port "$PORT" \

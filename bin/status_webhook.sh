@@ -7,4 +7,4 @@ else
   echo "webhook not running"
 fi
 echo "== TAIL LOG =="
-tail -n 40 "$LOG" 2>/dev/null || true
+tail -n 50 "$LOG" 2>/dev/null || true
