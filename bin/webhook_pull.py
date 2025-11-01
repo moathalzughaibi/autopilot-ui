@@ -23,7 +23,7 @@ def _log(msg: str):
         f.write(f"[{ts}] {msg}\n")
 
 def _verify_sig(signature_header: str, body: bytes) -> bool:
-    # header: X-Hub-Signature-256: sha256=<hexdigest>
+    # X-Hub-Signature-256: sha256=<hexdigest>
     if not signature_header or not signature_header.startswith("sha256="):
         return False
     sent = signature_header.split("=", 1)[1]
@@ -41,7 +41,7 @@ async def hook(request: Request):
     sig   = request.headers.get("X-Hub-Signature-256", "")
     _log(f"INCOMING event={event}, len={len(raw)}")
 
-    # اسمح بالـ ping بلا توقيع لتبسيط الاختبار الأول
+    # اسمح بالـ ping بدون توقيع لتسهيل الاختبار
     if event != "ping" and not _verify_sig(sig, raw):
         _log("BAD SIGNATURE")
         raise HTTPException(status_code=401, detail="bad signature")
@@ -51,14 +51,12 @@ async def hook(request: Request):
         return "pong"
 
     if event == "push":
-        # 1) اسحب آخر تغييرات
-        out_pull = subprocess.getoutput("bash -lc 'cd /workspace/data && git pull --rebase --autostash || true'")
-        _log(f"git pull ->\n{out_pull}")
+        pull = subprocess.getoutput("bash -lc 'cd /workspace/data && git pull --rebase --autostash || true'")
+        _log(f"git pull ->\n{pull}")
 
-        # 2) شغّل مزامنة التايملاين (لو موجودة)
-        out_tl = subprocess.getoutput("bash -lc '/workspace/data/bin/throttled_timeline_sync.sh 30 || true'")
-        _log(f"timeline sync ->\n{out_tl}")
-
+        # (اختياري) شغّل مزامنة التايملاين لو كانت موجودة
+        tl = subprocess.getoutput("bash -lc '/workspace/data/bin/throttled_timeline_sync.sh 30 || true'")
+        _log(f"timeline sync ->\n{tl}")
         return "ok"
 
     _log(f"IGNORED event={event}")

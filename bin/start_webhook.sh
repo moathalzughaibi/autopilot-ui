@@ -11,7 +11,7 @@ if [ -f "$PID" ] && ps -p "$(cat "$PID")" >/dev/null 2>&1; then
 fi
 
 : > "$LOG"
-# لا تحط مسافة بعد "\" أبداً
+# انتبه: لا توجد أي مسافة بعد "\" في السطر التالي
 setsid nohup uvicorn webhook_pull:app \
   --app-dir /workspace/data/bin \
   --host 0.0.0.0 --port "$PORT" \
