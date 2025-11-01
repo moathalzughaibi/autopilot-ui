@@ -3,6 +3,8 @@ set -euo pipefail
 PORT="${1:-8889}"
 LOG="/workspace/data/logs/webhook_pull.log"
 PID="/workspace/data/logs/webhook_pull.pid"
+APP_DIR="/workspace/data/bin"
+UVICORN="/workspace/data/.venv/bin/uvicorn"
 
 # أوقف إن كان شغال
 if [ -f "$PID" ] && ps -p "$(cat "$PID")" >/dev/null 2>&1; then
@@ -12,8 +14,8 @@ fi
 
 : > "$LOG"
 # انتبه: لا توجد أي مسافة بعد "\" في السطر التالي
-setsid nohup uvicorn webhook_pull:app \
-  --app-dir /workspace/data/bin \
+setsid nohup "$UVICORN" webhook_pull:app \
+  --app-dir "$APP_DIR" \
   --host 0.0.0.0 --port "$PORT" \
   >> "$LOG" 2>&1 &
 

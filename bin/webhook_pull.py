@@ -53,8 +53,7 @@ async def hook(request: Request):
     if event == "push":
         pull = subprocess.getoutput("bash -lc 'cd /workspace/data && git pull --rebase --autostash || true'")
         _log(f"git pull ->\n{pull}")
-
-        # (اختياري) شغّل مزامنة التايملاين لو كانت موجودة
+        # (اختياري) شغّل مزامنة التايملاين لو موجودة
         tl = subprocess.getoutput("bash -lc '/workspace/data/bin/throttled_timeline_sync.sh 30 || true'")
         _log(f"timeline sync ->\n{tl}")
         return "ok"
