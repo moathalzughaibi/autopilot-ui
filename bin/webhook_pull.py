@@ -1,9 +1,10 @@
-import os, hmac, hashlib, json, subprocess, time
+import os, hmac, hashlib, subprocess, time
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse
 
 LOG = "/workspace/data/logs/webhook_pull.log"
 ENV = "/workspace/secrets/webhook.env"
+REPO = "/workspace/data"
 
 # --- load secret (GITHUB_WEBHOOK_SECRET=...) ---
 if os.path.exists(ENV):
@@ -22,41 +23,47 @@ def _log(msg: str):
     with open(LOG, "a", encoding="utf-8") as f:
         f.write(f"[{ts}] {msg}\n")
 
-def _verify_sig(signature_header: str, body: bytes) -> bool:
-    # GitHub sends: X-Hub-Signature-256: sha256=<hexdigest>
-    if not signature_header or not signature_header.startswith("sha256="):
+def _verify_sig(sig_header: str, body: bytes) -> bool:
+    if not sig_header or not sig_header.startswith("sha256="):
         return False
-    sent = signature_header.split("=", 1)[1]
+    sent = sig_header.split("=", 1)[1]
     mac  = hmac.new(APP_SECRET.encode(), msg=body, digestmod=hashlib.sha256).hexdigest()
-    return hmac.compare_digest(sent, mac)
+    return hmac.compare_digest(mac, sent)
+
+def _run(cmd: str) -> str:
+    r = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    out = (r.stdout or "") + (r.stderr or "")
+    _log(f"$ {cmd}\n{out.strip()}")
+    return out
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    return PlainTextResponse("ok")
 
-@app.post("/hook", response_class=PlainTextResponse)
+@app.post("/hook")
 async def hook(request: Request):
-    raw   = await request.body()
-    event = request.headers.get("X-GitHub-Event", "unknown")
-    sig   = request.headers.get("X-Hub-Signature-256", "")
-    _log(f"INCOMING event={event}, len={len(raw)}")
+    body = await request.body()
+    event = request.headers.get("X-GitHub-Event", "")
+    delivery = request.headers.get("X-GitHub-Delivery", "")
+    sig = request.headers.get("X-Hub-Signature-256", "")
 
-    # نسمح بـ ping بدون توقيع لتجربة سريعة
-    if event != "ping" and not _verify_sig(sig, raw):
-        _log("BAD SIGNATURE")
-        raise HTTPException(status_code=401, detail="bad signature")
+    _log(f"IN: event={event} delivery={delivery} len={len(body)}")
+
+    # GitHub سيتحقق من السر – نحن أيضاً نتحقق هنا
+    if event != "ping" and not _verify_sig(sig, body):
+        _log("!! signature verification failed")
+        raise HTTPException(401, "bad signature")
 
     if event == "ping":
-        _log("PING ok")
-        return "pong"
+        _log("pong")
+        return PlainTextResponse("pong")
 
     if event == "push":
-        pull = subprocess.getoutput("bash -lc 'cd /workspace/data && git pull --rebase --autostash || true'")
-        _log(f"git pull ->\n{pull}")
-        # (اختياري) تشغيل مزامنة التايملاين إن وُجدت
-        tl = subprocess.getoutput("bash -lc '/workspace/data/bin/throttled_timeline_sync.sh 30 || true'")
-        _log(f"timeline sync ->\n{tl}")
-        return "ok"
+        # اسحب آخر التغييرات ثم شغّل مزامنة التايملاين بخنق بسيط
+        _run(f"git -C {REPO} fetch origin")
+        _run(f"git -C {REPO} pull --rebase --autostash origin main || true")
+        _run(f"{REPO}/bin/throttled_timeline_sync.sh 5 || true")
+        return PlainTextResponse("ok")
 
-    _log(f"IGNORED event={event}")
-    return "ignored"
+    _log(f"ignored event={event}")
+    return PlainTextResponse("ignored")
