@@ -14,8 +14,7 @@ fi
 
 : > "$LOG"
 setsid nohup "$UVICORN" webhook_pull:app \
-  --app-dir "$APP_DIR" \
-  --host 0.0.0.0 --port "$PORT" \
+  --app-dir "$APP_DIR" --host 0.0.0.0 --port "$PORT" \
   >> "$LOG" 2>&1 &
 
 echo $! > "$PID"
