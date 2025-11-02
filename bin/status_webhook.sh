@@ -6,4 +6,5 @@ if [ -f "$PID" ] && ps -p "$(cat "$PID")" >/dev/null 2>&1; then
 else
   echo "webhook not running"
 fi
-echo "== TAIL LOG =="; tail -n 80 "$LOG" 2>/dev/null || true
+echo "== TAIL LOG =="
+tail -n 80 "$LOG" 2>/dev/null || true

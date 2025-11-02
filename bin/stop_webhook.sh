@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 PID="/workspace/data/logs/webhook_pull.pid"
-[ -f "$PID" ] && kill -9 "$(cat "$PID")" >/dev/null 2>&1 || true
-rm -f "$PID"
+if [ -f "$PID" ]; then
+  kill -9 "$(cat "$PID")" 2>/dev/null || true
+  rm -f "$PID"
+fi
 echo "✅ webhook stopped"
