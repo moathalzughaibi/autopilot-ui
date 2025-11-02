@@ -24,7 +24,7 @@ def _log(msg: str):
         f.write(f"[{ts}] {msg}\n")
 
 def _verify_sig(header_sig: str, body: bytes) -> bool:
-    # نتعامل مع sha256 فقط (GitHub يرسل X-Hub-Signature-256)
+    # نعتمد sha256 (هيدر: X-Hub-Signature-256)
     if not header_sig or not header_sig.startswith("sha256="):
         return False
     given = header_sig.split("=", 1)[1]
@@ -38,17 +38,17 @@ def health():
 
 @app.post("/hook")
 async def hook(request: Request):
-    body = await request.body()
+    body  = await request.body()
     event = request.headers.get("X-GitHub-Event", "unknown")
-    sig256 = request.headers.get("X-Hub-Signature-256", "")
+    sig   = request.headers.get("X-Hub-Signature-256", "")
 
-    # حدث ping لا يحتاج توقيع
+    # ping لا يحتاج توقيع
     if event == "ping":
         _log("PING received")
         return PlainTextResponse("pong")
 
-    # باقي الأحداث نتحقق من التوقيع
-    if not _verify_sig(sig256, body):
+    # تحقق التوقيع لباقي الأحداث
+    if not _verify_sig(sig, body):
         _log(f"DENY invalid signature event={event}")
         raise HTTPException(status_code=403, detail="invalid signature")
 
