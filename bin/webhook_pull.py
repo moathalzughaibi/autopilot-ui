@@ -1,12 +1,12 @@
+
 import os, hmac, hashlib, subprocess, time
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse
 
 LOG  = "/workspace/data/logs/webhook_pull.log"
-ENV  = "/workspace/secrets/webhook.env"       # يحتوي سطر: GITHUB_WEBHOOK_SECRET=...
-REPO = "/workspace/data"                       # مسار الريبو على البود
+ENV  = "/workspace/secrets/webhook.env"   # contains: GITHUB_WEBHOOK_SECRET=...
+REPO = "/workspace/data"
 
-# -------- helpers --------
 def _log(msg: str) -> None:
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     with open(LOG, "a", encoding="utf-8") as f:
@@ -25,10 +25,6 @@ def _load_secret() -> str:
 SECRET = _load_secret()
 
 def _verify_sig(sig_header: str, body: bytes) -> None:
-    """
-    يتحقق من X-Hub-Signature-256 = sha256=...
-    يرفع HTTPException(401) إن كان غير مطابق.
-    """
     if not sig_header or not sig_header.startswith("sha256="):
         raise HTTPException(status_code=401, detail="missing signature")
     sent = sig_header.split("=", 1)[1]
@@ -41,7 +37,6 @@ def _git(cmd: str) -> str:
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     return p.stdout.strip()
 
-# -------- app --------
 app = FastAPI()
 
 @app.get("/health")
@@ -54,16 +49,14 @@ async def hook(request: Request):
     event = request.headers.get("X-GitHub-Event", "")
     sig   = request.headers.get("X-Hub-Signature-256", "")
 
-    # ping لا يحتاج توقيع
     if event == "ping":
         _log("PING")
         return PlainTextResponse("pong")
 
-    # تحقق التوقيع لباقي الأحداث
     _verify_sig(sig, body)
 
     if event == "push":
-        _log("PUSH: running git pull")
+        _log("PUSH: git pull")
         out = _git("git fetch --all && git reset --hard origin/main || true && git pull --rebase --autostash || true")
         _log(f"GIT:\n{out}")
         return PlainTextResponse("ok")
