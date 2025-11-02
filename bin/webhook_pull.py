@@ -1,4 +1,3 @@
-
 import os, hmac, hashlib, json, subprocess, time
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse
@@ -42,21 +41,19 @@ async def hook(request: Request):
     sig   = request.headers.get("X-Hub-Signature-256", "")
     _log(f"INCOMING event={event}, len={len(raw)}")
 
-    # allow ping without signature (لتجربة سريعة)
+    # نسمح بـ ping بدون توقيع لتجربة سريعة
     if event != "ping" and not _verify_sig(sig, raw):
         _log("BAD SIGNATURE")
         raise HTTPException(status_code=401, detail="bad signature")
 
-    # ping test
     if event == "ping":
         _log("PING ok")
         return "pong"
 
-    # handle push
     if event == "push":
         pull = subprocess.getoutput("bash -lc 'cd /workspace/data && git pull --rebase --autostash || true'")
         _log(f"git pull ->\n{pull}")
-        # optional: شغّل المزامنة الزمنية إن وُجدت
+        # (اختياري) تشغيل مزامنة التايملاين لو موجودة
         tl = subprocess.getoutput("bash -lc '/workspace/data/bin/throttled_timeline_sync.sh 30 || true'")
         _log(f"timeline sync ->\n{tl}")
         return "ok"
